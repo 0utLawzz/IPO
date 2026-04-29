@@ -1,0 +1,33 @@
+# Export data folder
+export/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment variables
+.env
+
+# Credentials and sensitive files
+credentials.json
+*.key
+
+# Logs and databases
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary images (screenshots/debug)
+*.png
+!docs/*.png
