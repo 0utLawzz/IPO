@@ -9,6 +9,7 @@ import os
 import warnings
 import logging
 import sys
+import re
 
 # Suppress subprocess cleanup warnings and logging
 warnings.filterwarnings("ignore", category=ResourceWarning)
@@ -33,6 +34,19 @@ class IPOTrademarkScraper:
         self.sheet_name = config.TM_FORMS[tm_form]["sheet_name"]
         self.duplicate_column = config.TM_FORMS[tm_form]["duplicate_column"]
         self.sheets_manager.duplicate_key_column = self.duplicate_column
+        self.session_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.export_root = getattr(config, 'EXPORT_ROOT', 'export')
+        self.session_dir = os.path.join(self.export_root, 'sessions', self.session_timestamp, self.tm_form)
+        self.tm_export_dir = os.path.join(self.export_root, self.tm_form)
+        os.makedirs(self.session_dir, exist_ok=True)
+        os.makedirs(self.tm_export_dir, exist_ok=True)
+        self.session_stats = {
+            'tm_form': self.tm_form,
+            'session_timestamp': self.session_timestamp,
+            'scraped_total': 0,
+            'duplicates_skipped': 0,
+            'new_rows_written': 0,
+        }
 
     async def init_browser(self):
         """Initialize Playwright browser"""
@@ -88,9 +102,139 @@ class IPOTrademarkScraper:
 
     async def close_browser(self):
         """Close the browser"""
-        if self.browser:
-            await self.browser.close()
+        try:
+            if self.page:
+                try:
+                    await self.page.close()
+                except:
+                    pass
+            if self.browser:
+                try:
+                    await self.browser.close()
+                except:
+                    pass
+            if self.playwright:
+                try:
+                    await self.playwright.stop()
+                except:
+                    pass
+        finally:
+            self.page = None
+            self.browser = None
+            self.playwright = None
             print("✓ Browser closed")
+
+    async def automated_login(self):
+        try:
+            print(f"Navigating to login page: {config.LOGIN_URL}")
+            await self.page.goto(config.LOGIN_URL)
+            await self.page.wait_for_load_state('networkidle')
+
+            username_selector = "#ctl00_ContentPlaceHolder1_txtUsername"
+            await self.page.wait_for_selector(username_selector, state='visible')
+            username = getattr(config, 'USERNAME', '')
+            password = getattr(config, 'PASSWORD', '')
+
+            await self.page.locator(username_selector).click()
+            await self.page.keyboard.press('Control+A')
+            await self.page.keyboard.press('Backspace')
+            await self.page.keyboard.type(str(username), delay=80)
+
+            try:
+                current_val = await self.page.locator(username_selector).input_value()
+            except:
+                current_val = ""
+
+            digits_in_val = re.sub(r"\D", "", current_val or "")
+            if digits_in_val != re.sub(r"\D", "", str(username)):
+                await self.page.evaluate(
+                    """(args) => {
+                        const [sel, val] = args;
+                        const el = document.querySelector(sel);
+                        if (!el) return false;
+                        el.focus();
+                        el.value = val;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        return true;
+                    }""",
+                    [username_selector, str(username)],
+                )
+
+            password_selectors = [
+                "#ctl00_ContentPlaceHolder1_txtPassword",
+                "input[type='password']",
+                "input[id*='Password' i]",
+                "input[name*='Password' i]",
+            ]
+            password_filled = False
+            for sel in password_selectors:
+                try:
+                    loc = self.page.locator(sel).first
+                    if await loc.count() == 0:
+                        continue
+                    await loc.click()
+                    await self.page.keyboard.press('Control+A')
+                    await self.page.keyboard.press('Backspace')
+                    await loc.fill(str(password))
+                    password_filled = True
+                    break
+                except:
+                    continue
+            if not password_filled:
+                raise Exception("Password field not found")
+
+            submit_selectors = [
+                "button[type='submit']",
+                "input[type='submit']",
+                "button:has-text('Login')",
+                "button:has-text('Sign')",
+                "input[value*='Login' i]",
+            ]
+            clicked = False
+            for sel in submit_selectors:
+                try:
+                    loc = self.page.locator(sel).first
+                    if await loc.count() == 0:
+                        continue
+                    await loc.click()
+                    clicked = True
+                    break
+                except:
+                    continue
+            if not clicked:
+                await self.page.keyboard.press('Enter')
+
+            await self.page.wait_for_load_state('networkidle')
+
+            try:
+                await self.page.wait_for_timeout(1500)
+            except:
+                pass
+
+            # Determine success by checking if username field still exists/visible or URL still on login.
+            still_login_url = 'login' in (self.page.url or '').lower()
+            username_still_visible = False
+            try:
+                username_still_visible = await self.page.locator(username_selector).is_visible()
+            except:
+                username_still_visible = False
+
+            if still_login_url and username_still_visible:
+                print("✗ Login appears to have failed (still on login page)")
+                await self.page.screenshot(path=os.path.join(self.session_dir, "login_failed.png"))
+                return False
+
+            await self.save_cookies()
+            print("✓ Logged in successfully")
+            return True
+        except Exception as e:
+            print(f"✗ Automated login failed: {e}")
+            try:
+                await self.page.screenshot(path=os.path.join(self.session_dir, "login_error.png"))
+            except:
+                pass
+            return False
 
     async def manual_login(self):
         """Open login page and wait for user to manually login"""
@@ -121,6 +265,10 @@ class IPOTrademarkScraper:
 
         except Exception as e:
             print(f"✗ Manual login failed: {e}")
+            try:
+                await self.page.screenshot(path=os.path.join(self.session_dir, "manual_login_error.png"))
+            except:
+                pass
             return False
 
     async def navigate_to_target_page(self):
@@ -131,7 +279,7 @@ class IPOTrademarkScraper:
             return True
         except Exception as e:
             print(f"✗ Failed to navigate to target page: {e}")
-            await self.page.screenshot(path="navigation_error.png")
+            await self.page.screenshot(path=os.path.join(self.session_dir, "navigation_error.png"))
             return False
 
     async def scrape_table_data(self):
@@ -229,7 +377,7 @@ class IPOTrademarkScraper:
             print(f"✓ Scraped {len(data)} data rows from page 1")
 
             # Take screenshot to see pagination UI
-            await self.page.screenshot(path="pagination_debug.png")
+            await self.page.screenshot(path=os.path.join(self.session_dir, "pagination_debug.png"))
 
             # Handle pagination - look for page numbers and next buttons
             page_num = 1
@@ -410,9 +558,9 @@ class IPOTrademarkScraper:
 
                             table_rows = await table.locator('tr').all()
 
-                            if len(table_rows) > header_row_idx:
+                            if len(table_rows) > header_row:
                                 # Process data rows
-                                for i in range(header_row_idx + 1, len(table_rows)):
+                                for i in range(header_row + 1, len(table_rows)):
                                     try:
                                         cells = await table_rows[i].locator('td').all()
                                         row_data = []
@@ -423,7 +571,7 @@ class IPOTrademarkScraper:
                                             row_data.append(text)
 
                                         if row_data and len(row_data) > 1:
-                                            data.append(row_data[:-1])
+                                            data.append(row_data)
                                     except:
                                         continue
                         except:
@@ -449,7 +597,6 @@ class IPOTrademarkScraper:
             try:
                 # Look for total count text (e.g., "471 items in 19 pages")
                 page_text = await self.page.inner_text('body')
-                import re
                 # Match patterns like "471 items", "471 items in 19 pages", etc.
                 total_match = re.search(r'(\d+)\s+items', page_text, re.IGNORECASE)
                 if total_match:
@@ -467,24 +614,40 @@ class IPOTrademarkScraper:
 
         except Exception as e:
             print(f"✗ Scraping failed: {e}")
-            await self.page.screenshot(path="scraping_error.png")
+            await self.page.screenshot(path=os.path.join(self.session_dir, "scraping_error.png"))
             return [], []
 
     def save_to_csv(self, headers, data):
         """Save data to CSV file as fallback"""
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"trademark_data_{timestamp}.csv"
+            filename = f"{self.tm_form}_trademark_data_{self.session_timestamp}.csv"
+            session_path = os.path.join(self.session_dir, filename)
+            tm_path = os.path.join(self.tm_export_dir, filename)
 
-            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+            with open(session_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(headers)
                 writer.writerows(data)
 
-            print(f"✓ Data saved to CSV: {filename}")
+            with open(tm_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(headers)
+                writer.writerows(data)
+
+            print(f"✓ Data saved to CSV: {session_path}")
             return True
         except Exception as e:
             print(f"✗ Failed to save CSV: {e}")
+            return False
+
+    def save_session_summary(self):
+        try:
+            summary_path = os.path.join(self.session_dir, "session_summary.json")
+            with open(summary_path, 'w', encoding='utf-8') as f:
+                json.dump(self.session_stats, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"✗ Failed to save session summary: {e}")
             return False
 
     async def run(self):
@@ -493,139 +656,119 @@ class IPOTrademarkScraper:
         print("IPO Pakistan Trademark Scraper")
         print("=" * 50)
 
-        # Initialize browser
         await self.init_browser()
-
-        # Try to load cookies and check if already logged in
-        cookies_loaded = await self.load_cookies()
-        if cookies_loaded:
-            if await self.check_login_status():
-                # Already logged in, proceed to target page
+        try:
+            cookies_loaded = await self.load_cookies()
+            if cookies_loaded and await self.check_login_status():
                 print("✓ Using saved session - no login required")
             else:
-                # Cookies expired, need manual login
-                print("✗ Saved cookies expired - manual login required")
-                if not await self.manual_login():
-                    await self.close_browser()
+                if not await self.automated_login():
                     return False
-        else:
-            # No saved cookies, need manual login
-            print("No saved cookies - manual login required")
-            if not await self.manual_login():
-                await self.close_browser()
+
+            if not await self.navigate_to_target_page():
                 return False
 
-        # Navigate to target page
-        if not await self.navigate_to_target_page():
-            await self.close_browser()
-            return False
+            headers, data = await self.scrape_table_data()
+            self.session_stats['scraped_total'] = len(data)
 
-        # Scrape table data
-        headers, data = await self.scrape_table_data()
+            if not data:
+                print("✗ No data scraped")
+                self.save_session_summary()
+                return False
 
-        if not data:
-            print("✗ No data scraped")
-            await self.close_browser()
-            return False
-
-        # Close browser
-        await self.close_browser()
-
-        # Save to CSV as fallback
-        print("\n" + "=" * 50)
-        print("Saving data to CSV...")
-        print("=" * 50)
-        self.save_to_csv(headers, data)
-
-        # Try to upload to Google Sheets
-        print("\n" + "=" * 50)
-        print("Attempting to upload to Google Sheets...")
-        print("=" * 50)
-
-        if not self.sheets_manager.authenticate():
-            print("✗ Google Sheets authentication failed - data saved to CSV instead")
             print("\n" + "=" * 50)
-            print("✓ AUTOMATION COMPLETED (CSV ONLY)")
+            print("Saving data to CSV...")
             print("=" * 50)
-            print(f"Total rows: {len(data)}")
-            print("Note: Update credentials.json to enable Google Sheets upload")
-            print("=" * 50)
-            return True
+            self.save_to_csv(headers, data)
 
-        if not self.sheets_manager.open_spreadsheet_by_id(config.SHEET_ID):
-            print("✗ Failed to open spreadsheet by ID - data saved to CSV instead")
             print("\n" + "=" * 50)
-            print("✓ AUTOMATION COMPLETED (CSV ONLY)")
+            print("Attempting to upload to Google Sheets...")
             print("=" * 50)
-            print(f"Total rows: {len(data)}")
-            print("=" * 50)
-            return True
 
-        worksheet_created = self.sheets_manager.get_or_create_worksheet(self.sheet_name)
-        if worksheet_created is None:
-            print("✗ Failed to get/create worksheet - data saved to CSV instead")
-            print("\n" + "=" * 50)
-            print("✓ AUTOMATION COMPLETED (CSV ONLY)")
-            print("=" * 50)
-            print(f"Total rows: {len(data)}")
-            print("=" * 50)
-            return True
-
-        # Get existing key values for duplicate checking
-        existing_key_values = self.sheets_manager.get_existing_key_values()
-
-        # Always write headers if worksheet was just created
-        if worksheet_created:
-            print("Newly created worksheet, writing headers...")
-            if not self.sheets_manager.write_headers(headers):
-                print("✗ Failed to write headers - data saved to CSV instead")
-                print("\n" + "=" * 50)
-                print("✓ AUTOMATION COMPLETED (CSV ONLY)")
-                print("=" * 50)
-                print(f"Total rows: {len(data)}")
-                print("=" * 50)
+            if not self.sheets_manager.authenticate():
+                print("✗ Google Sheets authentication failed - data saved to CSV instead")
+                self.save_session_summary()
                 return True
-        else:
-            # Check if existing worksheet is empty, write headers if needed
-            worksheet_data = self.sheets_manager.worksheet.get_all_values()
-            if not worksheet_data:
-                print("Existing worksheet is empty, writing headers...")
+
+            if not self.sheets_manager.open_spreadsheet_by_id(config.SHEET_ID):
+                print("✗ Failed to open spreadsheet by ID - data saved to CSV instead")
+                self.save_session_summary()
+                return True
+
+            worksheet_created = self.sheets_manager.get_or_create_worksheet(self.sheet_name)
+            if worksheet_created is None:
+                print("✗ Failed to get/create worksheet - data saved to CSV instead")
+                self.save_session_summary()
+                return True
+
+            existing_key_values = self.sheets_manager.get_existing_key_values()
+
+            if worksheet_created:
+                print("Newly created worksheet, writing headers...")
                 if not self.sheets_manager.write_headers(headers):
                     print("✗ Failed to write headers - data saved to CSV instead")
-                    print("\n" + "=" * 50)
-                    print("✓ AUTOMATION COMPLETED (CSV ONLY)")
-                    print("=" * 50)
-                    print(f"Total rows: {len(data)}")
-                    print("=" * 50)
+                    self.save_session_summary()
                     return True
             else:
-                print(f"Worksheet already has {len(worksheet_data)} rows, skipping headers")
+                worksheet_data = self.sheets_manager.worksheet.get_all_values()
+                if not worksheet_data:
+                    print("Existing worksheet is empty, writing headers...")
+                    if not self.sheets_manager.write_headers(headers):
+                        print("✗ Failed to write headers - data saved to CSV instead")
+                        self.save_session_summary()
+                        return True
+                else:
+                    print(f"Worksheet already has {len(worksheet_data)} rows, skipping headers")
 
-        # Write new data (excluding duplicates)
-        if not self.sheets_manager.write_new_data(data, existing_key_values):
-            print("✗ Failed to write data - data saved to CSV instead")
+            always_append = bool(getattr(config, 'ALWAYS_APPEND_TO_SHEETS', False))
+            if always_append:
+                # Always append all rows; we still compute an estimated duplicates count by comparing with existing keys.
+                duplicates_estimate = 0
+                for row in data:
+                    if len(row) > self.duplicate_column:
+                        key_value = row[self.duplicate_column].strip()
+                        if key_value and key_value in existing_key_values:
+                            duplicates_estimate += 1
+                write_stats = {
+                    'attempted': len(data),
+                    'written': len(data),
+                    'duplicates': duplicates_estimate,
+                }
+
+                # Append in one go at next empty row
+                values = self.sheets_manager.worksheet.col_values(1)
+                start_row = len(values) + 1
+                self.sheets_manager.worksheet.update(range_name=f'A{start_row}', values=data)
+                print(f"✓ Data appended: {len(data)} rows (duplicates estimate: {duplicates_estimate})")
+            else:
+                write_stats = self.sheets_manager.write_new_data(data, existing_key_values)
+            if write_stats is None:
+                print("✗ Failed to write data - data saved to CSV instead")
+                self.save_session_summary()
+                return True
+
+            self.session_stats['duplicates_skipped'] = int(write_stats.get('duplicates', 0))
+            self.session_stats['new_rows_written'] = int(write_stats.get('written', 0))
+
+            if not self.sheets_manager.apply_formatting():
+                print("⚠ Warning: Failed to apply formatting (data still saved)")
+
+            url = self.sheets_manager.get_spreadsheet_url()
             print("\n" + "=" * 50)
-            print("✓ AUTOMATION COMPLETED (CSV ONLY)")
+            print("✓ AUTOMATION COMPLETED SUCCESSFULLY")
             print("=" * 50)
-            print(f"Total rows: {len(data)}")
+            print(f"TM Form: {self.tm_form}")
+            print(f"Data uploaded to: {url}")
+            print(f"Worksheet: {self.sheet_name}")
+            print(f"Scraped this run: {self.session_stats['scraped_total']}")
+            print(f"New rows written: {self.session_stats['new_rows_written']}")
+            print(f"Duplicates skipped: {self.session_stats['duplicates_skipped']}")
             print("=" * 50)
+
+            self.save_session_summary()
             return True
-
-        # Apply formatting
-        if not self.sheets_manager.apply_formatting():
-            print("⚠ Warning: Failed to apply formatting (data still saved)")
-
-        # Print success message with URL
-        url = self.sheets_manager.get_spreadsheet_url()
-        print("\n" + "=" * 50)
-        print("✓ AUTOMATION COMPLETED SUCCESSFULLY")
-        print("=" * 50)
-        print(f"TM Form: {self.tm_form}")
-        print(f"Data uploaded to: {url}")
-        print(f"Worksheet: {self.sheet_name}")
-        print("=" * 50)
-
-        return True
+        finally:
+            await self.close_browser()
 
 
 def display_main_menu():

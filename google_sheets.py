@@ -86,7 +86,15 @@ class GoogleSheetsManager:
             return False
 
     def write_new_data(self, data, existing_key_values):
-        """Write only new data rows (excluding duplicates)"""
+        """Write only new data rows (excluding duplicates)
+
+        Returns a stats dict:
+            {
+                'attempted': <int>,
+                'written': <int>,
+                'duplicates': <int>
+            }
+        """
         try:
             new_rows = []
             for row in data:
@@ -95,6 +103,10 @@ class GoogleSheetsManager:
                     if key_value and key_value not in existing_key_values:
                         new_rows.append(row)
                         existing_key_values.add(key_value)
+
+            attempted = len(data)
+            written = len(new_rows)
+            duplicates = attempted - written
 
             if new_rows:
                 # Find next empty row
@@ -106,14 +118,22 @@ class GoogleSheetsManager:
 
                 # Write new data
                 self.worksheet.update(f'A{start_row}', new_rows)
-                print(f"✓ New data written: {len(new_rows)} rows (skipped {len(data) - len(new_rows)} duplicates)")
-                return True
+                print(f"✓ New data written: {written} rows (skipped {duplicates} duplicates)")
+                return {
+                    'attempted': attempted,
+                    'written': written,
+                    'duplicates': duplicates,
+                }
             else:
-                print(f"✓ No new data to write (all {len(data)} rows were duplicates)")
-                return True
+                print(f"✓ No new data to write (all {attempted} rows were duplicates)")
+                return {
+                    'attempted': attempted,
+                    'written': 0,
+                    'duplicates': attempted,
+                }
         except Exception as e:
             print(f"✗ Failed to write data: {e}")
-            return False
+            return None
 
     def apply_formatting(self):
         """Apply formatting to the worksheet with Calibri font and center/middle alignment"""

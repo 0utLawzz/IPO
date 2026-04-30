@@ -1,8 +1,8 @@
 # Configuration file for IPO Pakistan Trademark Scraper
 
 # Login credentials (will be prompted at runtime)
-USERNAME = None
-PASSWORD = None
+USERNAME = "3740512591119"
+PASSWORD = "51515Blackrose#"
 
 # URLs
 LOGIN_URL = "https://apply.ipo.gov.pk/UserLogin"
@@ -146,3 +146,9 @@ TIMEOUT = 30000  # 30 seconds in milliseconds
 
 # Cookie persistence
 COOKIES_FILE = "cookies.json"
+
+# Export settings
+EXPORT_ROOT = "export"
+
+# Upload behavior
+ALWAYS_APPEND_TO_SHEETS = True
