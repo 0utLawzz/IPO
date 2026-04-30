@@ -154,22 +154,121 @@ export default function App() {
 
         {screen === 'welcome' && (
           <Card title="Welcome">
-            <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', whiteSpace: 'pre', lineHeight: 1.3, fontSize: 12, opacity: 0.95, padding: 12, borderRadius: 12, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)' }}>
-{`============================================================
-               IPO TRADEMARK SCRAPER
-============================================================
-1. Number Check [PENDING]
-2. Acknowledgements [PENDING]
-3. Submission
-0. Exit
-============================================================`}
-            </div>
+            <div style={{
+              borderRadius: 16,
+              padding: 14,
+              background: 'rgba(0,0,0,0.22)',
+              border: '1px solid rgba(255,255,255,0.10)'
+            }}>
+              <div style={{
+                height: 1,
+                background: 'linear-gradient(90deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06))',
+                marginBottom: 12
+              }} />
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-              <Button variant="ghost" onClick={() => {}} disabled>1. Number Check</Button>
-              <Button variant="ghost" onClick={() => {}} disabled>2. Acknowledgements</Button>
-              <Button onClick={() => setScreen('submission')}>3. Submission</Button>
-              <Button variant="danger" onClick={() => window.close?.()}>0. Exit</Button>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 12
+              }}>
+                <div style={{
+                  fontSize: 18,
+                  fontWeight: 750,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase'
+                }}>
+                  IPO Trademark Scraper
+                </div>
+                <div style={{
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                  fontSize: 12,
+                  opacity: 0.75
+                }}>
+                  Main Menu
+                </div>
+              </div>
+
+              <div style={{
+                display: 'grid',
+                gap: 10,
+                gridTemplateColumns: '1fr',
+              }}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '54px 1fr 120px',
+                  gap: 10,
+                  padding: '10px 12px',
+                  borderRadius: 14,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', opacity: 0.9 }}>1.</div>
+                  <div style={{ fontSize: 14, fontWeight: 650 }}>Number Check</div>
+                  <div style={{
+                    justifySelf: 'end',
+                    fontSize: 11,
+                    padding: '4px 10px',
+                    borderRadius: 999,
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    opacity: 0.7
+                  }}>PENDING</div>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '54px 1fr 120px',
+                  gap: 10,
+                  padding: '10px 12px',
+                  borderRadius: 14,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', opacity: 0.9 }}>2.</div>
+                  <div style={{ fontSize: 14, fontWeight: 650 }}>Acknowledgements</div>
+                  <div style={{
+                    justifySelf: 'end',
+                    fontSize: 11,
+                    padding: '4px 10px',
+                    borderRadius: 999,
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    opacity: 0.7
+                  }}>PENDING</div>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '54px 1fr 120px',
+                  gap: 10,
+                  padding: '10px 12px',
+                  borderRadius: 14,
+                  background: 'linear-gradient(90deg, rgba(59,130,246,0.16), rgba(34,197,94,0.10))',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', opacity: 0.9 }}>3.</div>
+                  <div style={{ fontSize: 14, fontWeight: 650 }}>Submission</div>
+                  <div style={{ justifySelf: 'end' }}>
+                    <Button onClick={() => setScreen('submission')} style={{ padding: '8px 12px', borderRadius: 12 }}>Open</Button>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+                <Button variant="ghost" onClick={() => setScreen('submission')}>Go to Submission</Button>
+                <Button variant="danger" onClick={() => window.close?.()}>Exit</Button>
+              </div>
+
+              <div style={{
+                height: 1,
+                background: 'linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.22))',
+                marginTop: 12
+              }} />
             </div>
           </Card>
         )}
