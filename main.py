@@ -10,6 +10,7 @@ import warnings
 import logging
 import sys
 import re
+import argparse
 
 # Suppress subprocess cleanup warnings and logging
 warnings.filterwarnings("ignore", category=ResourceWarning)
@@ -381,11 +382,11 @@ class IPOTrademarkScraper:
 
             # Handle pagination - look for page numbers and next buttons
             page_num = 1
-            max_pages = 3  # Limit to 3 pages for testing
+            max_pages = getattr(config, 'MAX_PAGES', None)
             consecutive_no_data = 0
             max_consecutive_no_data = 2
 
-            while page_num < max_pages:
+            while max_pages is None or page_num < max_pages:
                 page_num += 1
                 print(f"\nChecking for page {page_num}...")
 
@@ -859,4 +860,11 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument('--tm', dest='tm_form', help='Run directly for a TM form (e.g., TM-11)', default=None)
+    args = parser.parse_args()
+
+    if args.tm_form:
+        asyncio.run(run_scraper(args.tm_form))
+    else:
+        asyncio.run(main())

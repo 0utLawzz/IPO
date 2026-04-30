@@ -152,3 +152,7 @@ EXPORT_ROOT = "export"
 
 # Upload behavior
 ALWAYS_APPEND_TO_SHEETS = True
+
+# Scraping behavior
+# Set to an int to cap pages for debugging; set to None to scrape all pages.
+MAX_PAGES = None

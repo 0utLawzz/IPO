@@ -31,3 +31,9 @@ Thumbs.db
 # Temporary images (screenshots/debug)
 *.png
 !docs/*.png
+
+# Electron app
+electron-app/node_modules/
+electron-app/dist/
+electron-app/dist-electron/
+electron-app/out/
