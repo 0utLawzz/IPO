@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   FileText,
@@ -17,7 +17,9 @@ import {
   TrendingUp,
   Users,
   Briefcase,
+  Loader2,
 } from "lucide-react";
+import { fetchSheetData, parseSheetData, calculateStats, formatRowData } from "@/lib/sheets";
 
 // TM Forms data matching config.py
 const TM_FORMS = [
@@ -40,27 +42,96 @@ const TM_FORMS = [
   { id: "TM-57", name: "TM 57", description: "Restoration abandoned mark", fee: 1500, check: "COL C", enabled: true },
 ];
 
-// Mock data for table
-const MOCK_DATA = [
-  { appNo: "TM-2024-001", class: "45", applicant: "ABC Enterprises", status: "Pending", date: "2024-01-15", office: "Karachi" },
-  { appNo: "TM-2024-002", class: "35", applicant: "XYZ Corp", status: "Approved", date: "2024-02-20", office: "Lahore" },
-  { appNo: "TM-2024-003", class: "42", applicant: "Tech Solutions", status: "Pending", date: "2024-03-10", office: "Islamabad" },
-  { appNo: "TM-2024-004", class: "9", applicant: "Digital Systems", status: "Rejected", date: "2024-01-25", office: "Karachi" },
-  { appNo: "TM-2024-005", class: "25", applicant: "Fashion Hub", status: "Approved", date: "2024-04-05", office: "Lahore" },
-];
-
-const STATS = [
-  { label: "Total Applications", value: "1,247", change: "+12.5%", icon: Briefcase, color: "bg-primary" },
-  { label: "Pending Review", value: "328", change: "+5.2%", icon: Clock, color: "bg-amber-500" },
-  { label: "Approved This Month", value: "89", change: "+23.1%", icon: CheckCircle2, color: "bg-accent" },
-  { label: "Success Rate", value: "78.4%", change: "+2.1%", icon: TrendingUp, color: "bg-blue-500" },
-];
+interface TableRow {
+  appNo: string;
+  class: string;
+  applicant: string;
+  status: string;
+  date: string;
+  office: string;
+}
 
 export default function Dashboard() {
   const [selectedTM, setSelectedTM] = useState("TM-01");
   const [searchQuery, setSearchQuery] = useState("");
+  const [data, setData] = useState<TableRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    successRate: '0.0'
+  });
 
   const selectedForm = TM_FORMS.find((f) => f.id === selectedTM);
+
+  // Fetch data when selected TM changes
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      setError(null);
+      try {
+        const sheetName = selectedForm?.id || 'TM-01';
+        const values = await fetchSheetData(sheetName);
+        const { rows } = parseSheetData(values);
+        const formattedData = rows.map(formatRowData);
+        setData(formattedData);
+        
+        // Calculate stats
+        const calculatedStats = calculateStats(rows);
+        setStats(calculatedStats);
+      } catch (err) {
+        console.error('Failed to fetch sheet data:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load data');
+        setData([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, [selectedTM, selectedForm]);
+
+  // Filter data based on search query
+  const filteredData = data.filter(row =>
+    row.appNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    row.applicant.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    row.class.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Generate stats cards dynamically
+  const STATS = [
+    { 
+      label: "Total Applications", 
+      value: stats.total.toLocaleString(), 
+      change: "+", 
+      icon: Briefcase, 
+      color: "bg-primary" 
+    },
+    { 
+      label: "Pending Review", 
+      value: stats.pending.toLocaleString(), 
+      change: "+", 
+      icon: Clock, 
+      color: "bg-amber-500" 
+    },
+    { 
+      label: "Approved", 
+      value: stats.approved.toLocaleString(), 
+      change: "+", 
+      icon: CheckCircle2, 
+      color: "bg-accent" 
+    },
+    { 
+      label: "Success Rate", 
+      value: `${stats.successRate}%`, 
+      change: "+", 
+      icon: TrendingUp, 
+      color: "bg-blue-500" 
+    },
+  ];
 
   return (
     <div className="flex h-screen bg-background">
@@ -229,26 +300,55 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {MOCK_DATA.map((row, index) => (
+                  {loading && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center">
+                        <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary mb-2" />
+                        <p className="text-muted-foreground">Loading data from Google Sheets...</p>
+                      </td>
+                    </tr>
+                  )}
+                  {error && !loading && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center">
+                        <AlertCircle className="w-8 h-8 mx-auto text-red-500 mb-2" />
+                        <p className="text-red-500 font-medium mb-1">Failed to load data</p>
+                        <p className="text-sm text-muted-foreground">{error}</p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Make sure NEXT_PUBLIC_GOOGLE_API_KEY is configured in Vercel
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                  {!loading && !error && filteredData.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
+                        No data found{searchQuery ? ' for this search' : ''}
+                      </td>
+                    </tr>
+                  )}
+                  {!loading && !error && filteredData.map((row, index) => (
                     <tr key={index} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-6 py-4 text-sm font-medium text-foreground">{row.appNo}</td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">{row.class}</td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">{row.applicant}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-foreground">{row.appNo || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{row.class || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{row.applicant || '-'}</td>
                       <td className="px-6 py-4">
                         <span
                           className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${
-                            row.status === "Approved"
+                            row.status?.toLowerCase().includes('approved') || row.status?.toLowerCase().includes('accepted')
                               ? "bg-green-100 text-green-700"
-                              : row.status === "Pending"
+                              : row.status?.toLowerCase().includes('pending')
                               ? "bg-amber-100 text-amber-700"
-                              : "bg-red-100 text-red-700"
+                              : row.status?.toLowerCase().includes('reject') || row.status?.toLowerCase().includes('refused')
+                              ? "bg-red-100 text-red-700"
+                              : "bg-gray-100 text-gray-700"
                           }`}
                         >
-                          {row.status}
+                          {row.status || 'Unknown'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">{row.date}</td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">{row.office}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{row.date || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">{row.office || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -258,8 +358,8 @@ export default function Dashboard() {
             {/* Pagination */}
             <div className="px-6 py-4 border-t border-border flex items-center justify-between">
               <div className="text-sm text-muted-foreground">
-                Showing <span className="font-medium">1</span> to <span className="font-medium">5</span> of{" "}
-                <span className="font-medium">247</span> results
+                Showing <span className="font-medium">{loading ? 0 : 1}</span> to <span className="font-medium">{loading ? 0 : filteredData.length}</span> of{" "}
+                <span className="font-medium">{stats.total}</span> results
               </div>
               <div className="flex items-center gap-2">
                 <button className="px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted/50 transition-colors disabled:opacity-50" disabled>
