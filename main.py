@@ -54,7 +54,10 @@ class IPOTrademarkScraper:
     async def init_browser(self):
         """Initialize Playwright browser"""
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=config.HEADLESS)
+        headless = bool(getattr(config, 'HEADLESS', True))
+        if str(os.getenv('GITHUB_ACTIONS', '')).strip().lower() == 'true' or os.getenv('CI'):
+            headless = True
+        self.browser = await self.playwright.chromium.launch(headless=headless)
         self.page = await self.browser.new_page()
         self.page.set_default_timeout(config.TIMEOUT)
         print("✓ Browser initialized")
