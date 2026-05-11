@@ -93,7 +93,7 @@ class IPOTrademarkScraper:
     async def check_login_status(self):
         """Check if user is already logged in"""
         try:
-            await self.page.goto(config.TARGET_URL)
+            await self.page.goto(self.target_url)
             await self.page.wait_for_load_state('networkidle')
 
             # Check if we're redirected to login page
@@ -103,8 +103,13 @@ class IPOTrademarkScraper:
             else:
                 print("✓ Already logged in (using saved cookies)")
                 return True
-        except:
+        except Exception as e:
+            print(f"Login check error: {e}")
             return False
+
+    def is_ci_environment(self):
+        """Check if running in CI environment (GitHub Actions, etc.)"""
+        return str(os.getenv('GITHUB_ACTIONS', '')).strip().lower() == 'true' or bool(os.getenv('CI'))
 
     async def close_browser(self):
         """Close the browser"""
@@ -246,8 +251,10 @@ class IPOTrademarkScraper:
         """Open login page and wait for user to manually login"""
         try:
             print(f"Navigating to login page: {config.LOGIN_URL}")
-            await self.page.goto(config.LOGIN_URL)
-            await self.page.wait_for_load_state('networkidle')
+            # Use domcontentloaded for faster response, with longer timeout
+            await self.page.goto(config.LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
+            # Give extra time for JS to initialize
+            await asyncio.sleep(2)
 
             print("\n" + "=" * 50)
             print("MANUAL LOGIN REQUIRED")
@@ -672,13 +679,25 @@ class IPOTrademarkScraper:
         await self.init_browser()
         try:
             cookies_loaded = await self.load_cookies()
-            if cookies_loaded and await self.check_login_status():
-                print("✓ Using saved session - no login required")
-            else:
+            login_ok = False
+            if cookies_loaded:
+                login_ok = await self.check_login_status()
+                if login_ok:
+                    print("✓ Using saved session - no login required")
+
+            if not login_ok:
                 login_mode = str(getattr(config, 'LOGIN_MODE', 'manual')).strip().lower()
+                # In CI mode with cookies loaded but expired, skip to auto login
+                if self.is_ci_environment() and cookies_loaded:
+                    print("⚠ Cookies expired in CI mode - switching to auto login")
+                    login_mode = 'auto'
+
                 if login_mode == 'auto':
                     ok = await self.automated_login()
                 else:
+                    if self.is_ci_environment():
+                        print("⚠ Manual login not available in CI - set LOGIN_MODE='auto' with credentials")
+                        return False
                     ok = await self.manual_login()
                 if not ok:
                     return False
