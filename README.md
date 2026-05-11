@@ -128,6 +128,53 @@ Even with secrets configured, authentication to IPO portal usually still fails i
 
 Do not refactor or change selectors/scraping logic unless you are intentionally updating the scraper.
 
-## Deployment (Next Task)
+## Web Dashboard (React + Next.js)
 
-Planned next step: build a React UI and deploy to Vercel.
+A modern React dashboard has been created in the `web/` folder with:
+
+- **Sidebar navigation**: All 17 TM forms with duplicate check indicators
+- **Stats cards**: Application metrics with trend indicators
+- **Data table**: Sortable, filterable trademark applications
+- **Theme**: Sequence brand colors (teal primary, green accent)
+
+### Local Development
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+### Build for Production
+
+```bash
+cd web
+npm run build
+```
+
+## Vercel Deployment
+
+### One-Click Deploy
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
+
+### Manual Deploy
+
+1. Push code to GitHub
+2. Go to [vercel.com](https://vercel.com) and import your repo
+3. Set root directory to `web/`
+4. Deploy!
+
+Or use Vercel CLI:
+
+```bash
+cd web
+vercel --prod
+```
+
+### Environment Variables (Optional)
+
+If connecting to live APIs later:
+
+- `NEXT_PUBLIC_API_URL` - Backend API endpoint
+- `NEXT_PUBLIC_SHEET_ID` - Google Sheets ID
