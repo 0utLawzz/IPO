@@ -16,6 +16,10 @@ credentials.json
 cookies.json
 *.key
 
+# Browser/session artifacts
+storage_state.json
+auth.json
+
 # Google service account / secrets
 credentials*.json
 *service_account*.json

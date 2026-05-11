@@ -79,6 +79,39 @@ Notes:
 - If you still enable the workflow, expect it to fail when authentication is required.
 - Do not commit `credentials.json` or `cookies.json`. Use GitHub Secrets instead.
 
+#### Configure GitHub Secrets (Recommended)
+
+Go to:
+
+`GitHub repo -> Settings -> Secrets and variables -> Actions`
+
+Add these secrets:
+
+- **`GOOGLE_SERVICE_ACCOUNT_JSON`**
+  - Value: the full JSON contents of your Google service account file (the same content as `credentials.json`).
+
+Optional environment variables (if you use them later):
+
+- **`IPO_LOGIN_MODE`**: `manual` or `auto`
+- **`IPO_USERNAME`**
+- **`IPO_PASSWORD`**
+
+#### How to use secrets in the workflow
+
+If you want CI to use Google Sheets credentials, you must write the secret into a file during the workflow run (never commit it):
+
+Example step:
+
+```yaml
+- name: Create credentials.json from secret
+  run: |
+    echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" > credentials.json
+```
+
+#### CAPTCHA limitation
+
+Even with secrets configured, authentication to IPO portal usually still fails in CI because CAPTCHA cannot be solved.
+
 ## Requirements
 
 - Python 3.8+
