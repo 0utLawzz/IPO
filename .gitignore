@@ -13,7 +13,6 @@ __pycache__/
 
 # Credentials and sensitive files
 credentials.json
-cookies.json
 *.key
 
 # Browser/session artifacts
