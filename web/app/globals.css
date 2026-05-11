@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700,800,900&display=swap');
 
 :root {
   --background: #f1f5f9;
@@ -20,14 +21,15 @@
   --color-accent-light: var(--accent-light);
   --color-card: var(--card);
   --color-border: var(--border);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: 'Satoshi', system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Satoshi', system-ui, -apple-system, sans-serif;
+  font-feature-settings: "ss01" on, "ss02" on, "cv01" on, "cv03" on;
 }
 
 /* Custom scrollbar */

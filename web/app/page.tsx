@@ -74,8 +74,23 @@ export default function Dashboard() {
       setError(null);
       try {
         const sheetName = selectedForm?.id || 'TM-01';
+        
+        // Check if API key is configured
+        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+        if (!apiKey || apiKey.includes('YOUR_KEY') || apiKey === 'placeholder') {
+          throw new Error('Google API Key not configured. Please add NEXT_PUBLIC_GOOGLE_API_KEY to Vercel environment variables.');
+        }
+        
         const values = await fetchSheetData(sheetName);
-        const { rows } = parseSheetData(values);
+        
+        // Debug: log raw data
+        console.log(`Fetched ${values.length} rows from ${sheetName}`, values.slice(0, 3));
+        
+        const { rows, headers } = parseSheetData(values);
+        
+        // Debug: log parsed data
+        console.log(`Parsed ${rows.length} rows, headers:`, headers);
+        
         const formattedData = rows.map(formatRowData);
         setData(formattedData);
         
