@@ -24,16 +24,38 @@ export async function fetchSheetData(sheetName: string): Promise<string[][]> {
 }
 
 // Parse sheet data into structured format
+// Handles IPO Pakistan sheet structure with flexible column mapping
 export function parseSheetData(values: string[][]): { headers: string[]; rows: Record<string, string>[] } {
   if (!values || values.length === 0) {
     return { headers: [], rows: [] };
   }
   
-  const headers = values[0];
-  const rows = values.slice(1).map((row) => {
+  // Check if first row looks like headers (contains text like "Application", "TM", etc.)
+  const firstRow = values[0];
+  const hasHeaders = firstRow.some(cell => 
+    /application|tm|no|number|class|date|status|applicant|proprietor|mark/i.test(cell)
+  );
+  
+  let headers: string[];
+  let dataRows: string[][];
+  
+  if (hasHeaders) {
+    headers = firstRow.map((h, i) => h || `Column${i}`);
+    dataRows = values.slice(1);
+  } else {
+    // No headers - create generic column names
+    headers = firstRow.map((_, i) => `Column${i}`);
+    dataRows = values;
+  }
+  
+  const rows = dataRows.map((row) => {
     const rowData: Record<string, string> = {};
     headers.forEach((header, index) => {
       rowData[header] = row[index] || '';
+    });
+    // Also add index-based access for flexibility
+    row.forEach((cell, index) => {
+      rowData[`_${index}`] = cell || '';
     });
     return rowData;
   });
@@ -41,31 +63,36 @@ export function parseSheetData(values: string[][]): { headers: string[]; rows: R
   return { headers, rows };
 }
 
-// Calculate stats from sheet data
+// Calculate stats from sheet data with flexible column detection
 export function calculateStats(rows: Record<string, string>[]) {
   const total = rows.length;
   
-  // Count by status - look for common status column names
+  // Helper to check status in any possible column
+  const getStatus = (r: Record<string, string>): string => {
+    const possibleKeys = ['Status', 'status', 'Application Status', 'Stage', '_5', '_6', '_8', '_9'];
+    for (const key of possibleKeys) {
+      if (r[key]) return r[key].toLowerCase();
+    }
+    return '';
+  };
+  
+  // Count by status
   const pending = rows.filter(r => 
-    r['Status']?.toLowerCase().includes('pending') ||
-    r['status']?.toLowerCase().includes('pending') ||
-    r['Application Status']?.toLowerCase().includes('pending')
+    getStatus(r).includes('pending') || getStatus(r).includes('under examination')
   ).length;
   
   const approved = rows.filter(r => 
-    r['Status']?.toLowerCase().includes('approved') ||
-    r['status']?.toLowerCase().includes('approved') ||
-    r['Application Status']?.toLowerCase().includes('approved') ||
-    r['Status']?.toLowerCase().includes('accepted') ||
-    r['status']?.toLowerCase().includes('accepted')
+    getStatus(r).includes('approved') || 
+    getStatus(r).includes('accepted') ||
+    getStatus(r).includes('registered') ||
+    getStatus(r).includes('granted')
   ).length;
   
   const rejected = rows.filter(r => 
-    r['Status']?.toLowerCase().includes('reject') ||
-    r['status']?.toLowerCase().includes('reject') ||
-    r['Application Status']?.toLowerCase().includes('reject') ||
-    r['Status']?.toLowerCase().includes('refused') ||
-    r['status']?.toLowerCase().includes('refused')
+    getStatus(r).includes('reject') || 
+    getStatus(r).includes('refused') ||
+    getStatus(r).includes('abandoned') ||
+    getStatus(r).includes('withdrawn')
   ).length;
   
   const successRate = total > 0 ? ((approved / total) * 100).toFixed(1) : '0.0';
@@ -80,6 +107,7 @@ export function calculateStats(rows: Record<string, string>[]) {
 }
 
 // Format row for display
+// Uses column name matching with index-based fallback
 export function formatRowData(row: Record<string, string>): {
   appNo: string;
   class: string;
@@ -88,16 +116,29 @@ export function formatRowData(row: Record<string, string>): {
   date: string;
   office: string;
 } {
-  // Try to find common column names
-  const appNo = row['Application No'] || row['Application Number'] || row['appNo'] || row['TM No'] || '';
-  const classVal = row['Class'] || row['class'] || row['Nice Class'] || '';
-  const applicant = row['Applicant'] || row['applicant'] || row['Proprietor'] || row['Owner'] || '';
-  const status = row['Status'] || row['status'] || row['Application Status'] || 'Unknown';
-  const date = row['Date'] || row['Filing Date'] || row['date'] || '';
-  const office = row['Office'] || row['Regional Office'] || row['office'] || 'Karachi';
+  // Helper to get value by trying multiple possible keys
+  const getValue = (...keys: string[]): string => {
+    for (const key of keys) {
+      if (row[key] && row[key].trim()) return row[key].trim();
+    }
+    return '';
+  };
+  
+  // Try named columns first, then fall back to index positions
+  // Common IPO sheet structures: [0]=No, [1]=AppNo, [2]=Mark, [3]=Class, [4]=Proprietor, [5]=Status, [6]=Date
+  const appNo = getValue('Application No', 'Application Number', 'appNo', 'TM No', 'Trademark No', '_1', '_0');
+  const mark = getValue('Mark', 'Trade Mark', 'Trademark', 'Trade_Mark', '_2');
+  const classVal = getValue('Class', 'class', 'Nice Class', 'Cl', '_3', '_4');
+  const applicant = getValue('Proprietor', 'Applicant', 'applicant', 'Owner', 'Name', '_4', '_5', '_3');
+  const status = getValue('Status', 'status', 'Application Status', 'Stage', '_5', '_6', '_8') || 'Unknown';
+  const date = getValue('Date', 'Filing Date', 'date', 'Filing_Date', 'Registration Date', '_6', '_7');
+  const office = getValue('Office', 'Regional Office', 'office', 'IPO Office', '_7', '_8', '_9') || 'Karachi';
+  
+  // Combine mark with appNo if available for better display
+  const displayAppNo = appNo || mark || 'N/A';
   
   return {
-    appNo,
+    appNo: displayAppNo,
     class: classVal,
     applicant,
     status,
