@@ -58,6 +58,9 @@ class GoogleSheetsManager:
             if not self.worksheet:
                 return set()
 
+            if self.duplicate_key_column is None:
+                return set()
+
             # Get all data from the worksheet
             all_data = self.worksheet.get_all_values()
             if len(all_data) < 2:
@@ -96,6 +99,25 @@ class GoogleSheetsManager:
             }
         """
         try:
+            if self.duplicate_key_column is None:
+                attempted = len(data)
+                if not data:
+                    return {
+                        'attempted': 0,
+                        'written': 0,
+                        'duplicates': 0,
+                    }
+
+                values = self.worksheet.col_values(1)
+                start_row = len(values) + 1
+                self.worksheet.update(f'A{start_row}', data)
+                print(f"✓ Data written (no duplicate check): {attempted} rows")
+                return {
+                    'attempted': attempted,
+                    'written': attempted,
+                    'duplicates': 0,
+                }
+
             new_rows = []
             for row in data:
                 if len(row) > self.duplicate_key_column:

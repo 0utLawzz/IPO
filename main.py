@@ -11,6 +11,8 @@ import logging
 import sys
 import re
 import argparse
+import signal
+
 
 # Suppress subprocess cleanup warnings and logging
 warnings.filterwarnings("ignore", category=ResourceWarning)
@@ -263,6 +265,9 @@ class IPOTrademarkScraper:
 
             print("✓ Proceeding with automation")
             return True
+
+        except KeyboardInterrupt:
+            raise
 
         except Exception as e:
             print(f"✗ Manual login failed: {e}")
@@ -654,7 +659,11 @@ class IPOTrademarkScraper:
     async def run(self):
         """Main execution flow"""
         print("=" * 50)
-        print("IPO Pakistan Trademark Scraper")
+        version = getattr(config, 'APP_VERSION', None)
+        if version:
+            print(f"IPO Pakistan Trademark Scraper v{version}")
+        else:
+            print("IPO Pakistan Trademark Scraper")
         print("=" * 50)
 
         await self.init_browser()
@@ -663,7 +672,12 @@ class IPOTrademarkScraper:
             if cookies_loaded and await self.check_login_status():
                 print("✓ Using saved session - no login required")
             else:
-                if not await self.automated_login():
+                login_mode = str(getattr(config, 'LOGIN_MODE', 'manual')).strip().lower()
+                if login_mode == 'auto':
+                    ok = await self.automated_login()
+                else:
+                    ok = await self.manual_login()
+                if not ok:
                     return False
 
             if not await self.navigate_to_target_page():
@@ -780,9 +794,13 @@ def display_main_menu():
     print("1. Number Check [PENDING]")
     print("2. Acknowledgements [PENDING]")
     print("3. Submission")
+    print("4. Run All (Configured TM List) and Exit")
     print("0. Exit")
     print("=" * 60)
-    choice = input("Select an option: ")
+    try:
+        choice = input("Select an option: ")
+    except EOFError:
+        return "0"
     return choice
 
 
@@ -794,8 +812,8 @@ def display_submission_menu():
 
     # Table header
     print("┌" + "─" * 4 + "┬" + "─" * 8 + "┬" + "─" * 60 + "┬" + "─" * 15 + "┐")
-    print("│ No │ TM Form │ Description                                           │ Fee (PKR)    │")
-    print("├" + "─" * 4 + "┼" + "─" * 8 + "┼" + "─" * 60 + "┼" + "─" * 15 + "┤")
+    print("│ No │ TM Form │ Description                                           │ Fee (PKR)    │ Run │ Dup │")
+    print("├" + "─" * 4 + "┼" + "─" * 8 + "┼" + "─" * 60 + "┼" + "─" * 15 + "┼" + "─" * 5 + "┼" + "─" * 5 + "┤")
 
     # Table rows - use TM number as selection key
     tm_list = sorted(config.TM_FORMS.keys())
@@ -804,15 +822,48 @@ def display_submission_menu():
         desc = form_info['description'][:57] + "..." if len(form_info['description']) > 57 else form_info['description']
         fee = str(form_info['fee'])
         tm_num = tm.split('-')[1]  # Extract number from TM-XX
-        print(f"│ {tm_num:2} │ {tm:6} │ {desc:<57} │ {fee:<11} │")
+        dup_col = form_info.get('duplicate_column', None)
+        dup_enabled = bool(form_info.get('duplicate_check', True))
+        run_enabled = tm in resolve_tm_forms_for_run()
+
+        if not dup_enabled or dup_col is None:
+            dup_label = "OFF"
+        else:
+            # dup_col is 0-based index -> Excel style letter (A=0)
+            dup_label = f"COL {chr(65 + int(dup_col))}"
+
+        run_label = "YES" if run_enabled else "NO"
+        print(f"│ {tm_num:2} │ {tm:6} │ {desc:<57} │ {fee:<11} │ {run_label:<3} │ {dup_label:<3} │")
 
     # Table footer
-    print("├" + "─" * 4 + "┼" + "─" * 8 + "┼" + "─" * 60 + "┼" + "─" * 15 + "┤")
-    print("│  0 │ Back    │ Return to Main Menu" + " " * 39 + "│              │")
-    print("└" + "─" * 4 + "┴" + "─" * 8 + "┴" + "─" * 60 + "┴" + "─" * 15 + "┘")
+    print("├" + "─" * 4 + "┼" + "─" * 8 + "┼" + "─" * 60 + "┼" + "─" * 15 + "┼" + "─" * 5 + "┼" + "─" * 5 + "┤")
+    print("│  0 │ Back    │ Return to Main Menu" + " " * 39 + "│              │     │     │")
+    print("└" + "─" * 4 + "┴" + "─" * 8 + "┴" + "─" * 60 + "┴" + "─" * 15 + "┴" + "─" * 5 + "┴" + "─" * 5 + "┘")
     print("=" * 100)
-    choice = input("Select TM Form (enter TM number, e.g., 11 for TM-11): ")
+    try:
+        choice = input("Select TM Form (enter TM number, e.g., 11 for TM-11): ")
+    except EOFError:
+        return "0"
     return choice
+
+
+def resolve_tm_forms_for_run():
+    forms = list(getattr(config, 'TM_RUN_FORMS', []))
+    if not forms:
+        return sorted(config.TM_FORMS.keys())
+    return [f for f in forms if f in config.TM_FORMS]
+
+
+async def run_all_configured_and_exit():
+    forms = resolve_tm_forms_for_run()
+    print("\n" + "=" * 60)
+    print("RUN ALL (CONFIGURED) - START")
+    print("=" * 60)
+    for tm_form in forms:
+        await run_scraper(tm_form)
+    print("\n" + "=" * 60)
+    print("RUN ALL (CONFIGURED) - DONE")
+    print("=" * 60)
 
 
 async def run_scraper(tm_form):
@@ -822,6 +873,10 @@ async def run_scraper(tm_form):
     print("=" * 60)
     
     scraper = IPOTrademarkScraper(tm_form)
+    form_info = config.TM_FORMS.get(tm_form, {})
+    if not bool(form_info.get('duplicate_check', True)):
+        scraper.duplicate_column = None
+        scraper.sheets_manager.duplicate_key_column = None
     await scraper.run()
 
 
@@ -855,16 +910,32 @@ async def main():
                         print(f"\n⚠ Invalid TM number: {sub_choice}. Please try again.")
                 except ValueError:
                     print("\n⚠ Invalid input. Please enter a TM number.")
+        elif choice == "4":
+            await run_all_configured_and_exit()
+            break
         else:
             print("\n⚠ Invalid selection. Please try again.")
 
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+
+    def run_with_ctrl_c(coro):
+        try:
+            asyncio.run(coro)
+        except KeyboardInterrupt:
+            print("\nStopping (Ctrl+C)...")
+        except EOFError:
+            print("\nStopping (EOF)...")
+
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument('--tm', dest='tm_form', help='Run directly for a TM form (e.g., TM-11)', default=None)
+    parser.add_argument('--all', dest='run_all', action='store_true', help='Run all configured TM forms and exit')
     args = parser.parse_args()
 
-    if args.tm_form:
-        asyncio.run(run_scraper(args.tm_form))
+    if args.run_all:
+        run_with_ctrl_c(run_all_configured_and_exit())
+    elif args.tm_form:
+        run_with_ctrl_c(run_scraper(args.tm_form))
     else:
-        asyncio.run(main())
+        run_with_ctrl_c(main())

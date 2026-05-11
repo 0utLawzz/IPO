@@ -1,17 +1,23 @@
-# Change Tracker
+# Changelog
 
-## Done
+All notable changes to this project will be documented in this file.
 
-- Automated login flow added (masked CNIC input support).
-- Export outputs moved to `export/` (per-TM and per-session folders).
-- Session summary JSON generated (scraped/new/duplicates metrics).
-- Electron desktop dashboard scaffold added (welcome page, TM runner, live logs, session viewer).
+The format is based on Keep a Changelog, and this project follows Semantic Versioning.
 
-## In progress
+## [1.0.0] - 2026-05-11
 
-- Electron packaging/build (optional) and UI polish.
+### Added
 
-## Pending
+- Manual login mode (default) with cookie persistence.
+- Graceful stop via `CTRL + C`.
+- `--all` mode to run all configured TM forms and exit.
+- TM form configuration extended with duplicate-check enable/disable.
 
-- Number Check feature.
-- Acknowledgements feature.
+### Changed
+
+- TM form configuration updated (fees and duplicate-check columns).
+- Menu UI updated to show run-enabled status and duplicate-check column in `COL <letter>` format.
+
+### Fixed
+
+- EOF handling in terminal menus.
